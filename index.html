@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDFO</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg" />
+<link rel="apple-touch-icon" href="favicon.svg" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+<meta name="description" content="Shrink PDFs locally in your browser: strip orphaned objects and downsample images to 300dpi. No data leaves your device." />
+<script src="pdf-lib.min.js"></script>
+<script src="pdfo.js"></script>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --bg: #fafafa;
+    --muted: #888;
+    --border: #e5e5e5;
+    --accent: #1a1a1a;
+    --good: #1a1a1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fg: #e8e8e8;
+      --bg: #111;
+      --muted: #888;
+      --border: #2a2a2a;
+      --accent: #e8e8e8;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 6rem;
+  }
+  .title {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin: 0.4rem 0 0;
+  }
+  .bar {
+    display: flex;
+    justify-content: center;
+    padding: 1.5rem 0 0.5rem;
+  }
+  button {
+    font: inherit;
+    color: var(--bg);
+    background: var(--accent);
+    border: none;
+    padding: 0.6rem 1.4rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  button:hover { opacity: 0.85; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.secondary {
+    color: var(--fg);
+    background: transparent;
+    border: 1px solid var(--border);
+  }
+  .filename {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+    min-height: 1.2em;
+  }
+  .hint {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin: 0;
+  }
+  .status {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin: 2rem 0;
+  }
+  .spinner {
+    width: 22px;
+    height: 22px;
+    margin: 0 auto 0.8rem;
+    border-radius: 50%;
+    border: 2.5px solid var(--border);
+    border-top-color: var(--fg);
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result {
+    margin-top: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.4rem 1.6rem;
+  }
+  .result-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    font-size: 0.9rem;
+  }
+  .result-row .label { color: var(--muted); }
+  .result-reduction {
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 600;
+    margin: 0.2rem 0 1rem;
+  }
+  .result-actions {
+    display: flex;
+    gap: 0.6rem;
+    justify-content: center;
+    margin-top: 1.4rem;
+  }
+  details.skipped {
+    margin-top: 1rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  details.skipped summary { cursor: pointer; }
+  details.skipped ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+  #drop-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #drop-overlay.active { display: flex; }
+  #drop-overlay > div {
+    color: #fff;
+    font-size: 1.25rem;
+    padding: 2rem 3rem;
+    border: 2px dashed rgba(255, 255, 255, 0.7);
+    border-radius: 12px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1 class="title">PDFO</h1>
+  <p class="subtitle">Strip orphaned objects and downsample images to 300dpi &mdash; entirely in your browser, no upload</p>
+  <div class="bar">
+    <button id="btn" type="button">Pick .pdf file to optimize</button>
+  </div>
+  <p class="hint">&hellip;or drag &amp; drop a file anywhere on the page</p>
+  <div class="filename" id="filename"></div>
+  <div id="out"></div>
+</main>
+<input type="file" id="file" accept=".pdf,application/pdf" hidden />
+<div id="drop-overlay"><div>Drop your .pdf file</div></div>
+<script>
+  const btn = document.getElementById('btn');
+  const file = document.getElementById('file');
+  const out = document.getElementById('out');
+  const fname = document.getElementById('filename');
+  const overlay = document.getElementById('drop-overlay');
+
+  let lastResultBytes = null;
+  let lastResultName = '';
+
+  function fmtSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function outName(original) {
+    return original.replace(/\.pdf$/i, '') + '-optimized.pdf';
+  }
+
+  function renderStatus(text) {
+    out.innerHTML =
+      '<div class="status"><div class="spinner"></div>' + text + '</div>';
+  }
+
+  function renderError(message) {
+    out.innerHTML =
+      '<div class="status">' + message + '</div>' +
+      '<div class="bar"><button class="secondary" id="retry">Try another file</button></div>';
+    document.getElementById('retry').addEventListener('click', reset);
+  }
+
+  function renderResult(report, name) {
+    const pct = report.originalSize > 0
+      ? Math.round((1 - report.finalSize / report.originalSize) * 100)
+      : 0;
+    const skippedHtml = report.skipped.length
+      ? '<details class="skipped"><summary>' + report.skipped.length + ' image(s) left unchanged</summary><ul>' +
+        report.skipped.map(s => '<li>' + s.widthPx + '&times;' + s.heightPx + 'px &mdash; ' + s.reason + '</li>').join('') +
+        '</ul></details>'
+      : '';
+    out.innerHTML =
+      '<div class="result">' +
+      '<div class="result-reduction">' + (pct > 0 ? '-' + pct + '%' : 'no change') + '</div>' +
+      '<div class="result-row"><span class="label">Original</span><span>' + fmtSize(report.originalSize) + '</span></div>' +
+      '<div class="result-row"><span class="label">Optimized</span><span>' + fmtSize(report.finalSize) + '</span></div>' +
+      '<div class="result-row"><span class="label">Orphaned objects removed</span><span>' + report.orphansRemoved + '</span></div>' +
+      '<div class="result-row"><span class="label">Images downsampled</span><span>' + report.downsampled.length + '</span></div>' +
+      skippedHtml +
+      '</div>' +
+      '<div class="result-actions">' +
+      '<button id="download">Download optimized PDF</button>' +
+      '<button class="secondary" id="another">Optimize another file</button>' +
+      '</div>';
+    document.getElementById('download').addEventListener('click', () => downloadResult(name));
+    document.getElementById('another').addEventListener('click', reset);
+  }
+
+  function downloadResult(name) {
+    const blob = new Blob([lastResultBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = outName(name);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+
+  function reset() {
+    lastResultBytes = null;
+    lastResultName = '';
+    fname.textContent = '';
+    out.innerHTML = '';
+    document.body.classList.remove('rendered');
+  }
+
+  async function processFile(f) {
+    if (!f) return;
+    fname.textContent = f.name;
+    renderStatus('Optimizing ' + f.name + '&hellip;');
+    try {
+      const buf = await f.arrayBuffer();
+      const { bytes, report } = await PDFO.optimize(buf, { targetDpi: 300 });
+      lastResultBytes = bytes;
+      lastResultName = f.name;
+      renderResult(report, f.name);
+    } catch (err) {
+      console.error('PDFO optimize failed:', err);
+      renderError('Could not optimize this file: ' + (err && err.message ? err.message : err));
+    }
+  }
+
+  btn.addEventListener('click', () => file.click());
+
+  file.addEventListener('change', () => {
+    processFile(file.files[0]);
+    file.value = '';
+  });
+
+  let dragDepth = 0;
+  window.addEventListener('dragenter', e => {
+    e.preventDefault();
+    if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) {
+      dragDepth++;
+      overlay.classList.add('active');
+    }
+  });
+  window.addEventListener('dragover', e => { e.preventDefault(); });
+  window.addEventListener('dragleave', e => {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) overlay.classList.remove('active');
+  });
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    dragDepth = 0;
+    overlay.classList.remove('active');
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) processFile(f);
+  });
+
+  if ('launchQueue' in window) {
+    window.launchQueue.setConsumer(async launchParams => {
+      if (!launchParams.files || !launchParams.files.length) return;
+      try {
+        const handle = launchParams.files[0];
+        const f = await handle.getFile();
+        processFile(f);
+      } catch (err) {
+        console.warn('launchQueue file read failed:', err);
+      }
+    });
+  }
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(err => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+  }
+</script>
+</body>
+</html>

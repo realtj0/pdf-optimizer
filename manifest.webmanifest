@@ -1,0 +1,26 @@
+{
+  "name": "PDFO",
+  "short_name": "PDFO",
+  "description": "Shrink PDFs locally in your browser: strip orphaned objects and downsample images to 300dpi. No data leaves your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#1F3A5F",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/pdf-optimizer/",
+      "accept": {
+        "application/pdf": [".pdf"]
+      }
+    }
+  ]
+}
