@@ -133,22 +133,25 @@ Two parts, both one-time setup:
    `application/pdf` via `manifest.webmanifest`'s `file_handlers` (same
    mechanism as MMV.app).
 
-2. **Quick Action**: `~/Library/Services/PDFO.workflow` — an Automator Service
-   scoped to PDF files in Finder, whose only step is a "Run Shell Script"
-   action running:
+2. **Quick Action**: `~/Library/Services/Optimize PDF.workflow` — an Automator
+   Service scoped to PDF files in Finder, whose only step is a "Run Shell
+   Script" action running:
    ```bash
    for f in "$@"; do
      open -a "PDFO" "$f"
    done
    ```
-   `open -a "PDFO"` targets the installed PWA app by name; passing it a file
-   triggers the app's `launchQueue.setConsumer` handler in `index.html`, which
-   loads and processes the file immediately — no manual drag-and-drop needed.
+   `open -a "PDFO"` targets the installed PWA app by name (the app itself
+   stays named PDFO); passing it a file triggers the app's
+   `launchQueue.setConsumer` handler in `index.html`, which loads and
+   processes the file immediately — no manual drag-and-drop needed. The
+   Finder right-click menu item is labeled "Optimize PDF" (`NSMenuItem` in
+   `Info.plist`), distinct from the app's own name.
 
    The `.workflow` bundle was authored directly (`Contents/Info.plist` +
    `Contents/document.wflow`) rather than built via Automator's UI. Right-click
-   a PDF in Finder → **Quick Actions → PDFO** should show it (Finder was
-   restarted and the Services cache flushed via
+   a PDF in Finder → **Quick Actions → Optimize PDF** should show it (Finder
+   was restarted and the Services cache flushed via
    `/System/Library/CoreServices/pbs -flush` after installing it — if it's not
    showing up, that's the first thing to retry, or check
    **System Settings → General → Login Items & Extensions → Extensions** to
