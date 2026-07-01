@@ -124,38 +124,58 @@ not part of the shipped app).
 
 ## macOS Quick Action (Finder right-click)
 
-Two parts, both one-time setup:
+Headless: no browser window opens. Right-click a PDF → **Quick Actions →
+Optimize PDF** → a few seconds later `<name>-optimized.pdf` shows up next to
+the original, with a macOS notification reporting the size reduction (or the
+error, if it failed).
 
-1. **Install PDFO as a Chrome PWA**: visit
-   https://realtj0.github.io/pdf-optimizer/ in Chrome → install the app via
-   Chrome's install button. This creates a real macOS app at
-   `~/Applications/Chrome Apps.localized/PDFO.app`, registered for `.pdf`/
-   `application/pdf` via `manifest.webmanifest`'s `file_handlers` (same
-   mechanism as MMV.app).
+This runs the exact same `pdfo.js`/`pdf-lib.min.js` logic as the browser PWA,
+just headless via Node instead of in a tab — no duplicated logic between the
+two. Pieces:
 
-2. **Quick Action**: `~/Library/Services/Optimize PDF.workflow` — an Automator
-   Service scoped to PDF files in Finder, whose only step is a "Run Shell
-   Script" action running:
-   ```bash
-   for f in "$@"; do
-     open -a "PDFO" "$f"
-   done
-   ```
-   `open -a "PDFO"` targets the installed PWA app by name (the app itself
-   stays named PDFO); passing it a file triggers the app's
-   `launchQueue.setConsumer` handler in `index.html`, which loads and
-   processes the file immediately — no manual drag-and-drop needed. The
-   Finder right-click menu item is labeled "Optimize PDF" (`NSMenuItem` in
-   `Info.plist`), distinct from the app's own name.
+- **`~/Library/PDFO-CLI/`** — `optimize-cli.js` plus a `node_modules/canvas`
+  (node-canvas), installed *outside* this repo deliberately: node-canvas is a
+  native addon, and this repo's path (Google Drive, spaces in the directory
+  name) broke `node-gyp`/`node-pre-gyp`'s prebuilt-binary fetch and source
+  build. `optimize-cli.js` shims `OffscreenCanvas`/`createImageBitmap`/
+  `ImageData` with node-canvas (same shim shape as the Node test harness used
+  during development), then `require()`s `pdfo.js`/`pdf-lib.min.js` directly
+  from this repo by absolute path — so the actual optimization logic still
+  has one source of truth, only the native canvas dependency lives elsewhere.
+  Building node-canvas from source (no prebuilt binary matched this Node
+  version/ABI) needed `brew install pkg-config pango jpeg giflib librsvg`
+  (cairo/libpng were already present).
+- **`~/Library/Services/Optimize PDF.workflow`** — an Automator Service
+  scoped to PDF files in Finder, whose only step is a "Run Shell Script"
+  action:
+  ```bash
+  NODE="/Users/thomas/.nvm/versions/node/v24.10.0/bin/node"
+  CLI="/Users/thomas/Library/PDFO-CLI/optimize-cli.js"
+  for f in "$@"; do
+    nohup "$NODE" "$CLI" "$f" >/tmp/pdfo-cli.log 2>&1 &
+  done
+  ```
+  Backgrounded (`nohup ... &`) so Finder's Quick Action returns instantly
+  instead of waiting on Node startup + processing; the macOS notification
+  (via `osascript display notification`, fired from `optimize-cli.js`) is the
+  only feedback once it's actually done. The absolute Node path is required —
+  Automator's Run Shell Script action doesn't source `.zshrc`/nvm, so a bare
+  `node` wouldn't resolve.
 
-   The `.workflow` bundle was authored directly (`Contents/Info.plist` +
-   `Contents/document.wflow`) rather than built via Automator's UI. Right-click
-   a PDF in Finder → **Quick Actions → Optimize PDF** should show it (Finder
-   was restarted and the Services cache flushed via
-   `/System/Library/CoreServices/pbs -flush` after installing it — if it's not
-   showing up, that's the first thing to retry, or check
-   **System Settings → General → Login Items & Extensions → Extensions** to
-   make sure it's enabled).
+  The `.workflow` bundle was authored directly (`Contents/Info.plist` +
+  `Contents/document.wflow`) rather than built via Automator's UI — Finder's
+  Services cache needs a flush + restart to pick up changes:
+  `/System/Library/CoreServices/pbs -flush && killall Finder`. If the menu
+  item is missing (or its label is stale — a rename didn't immediately take
+  in testing), that's the first thing to retry, or check
+  **System Settings → General → Login Items & Extensions → Extensions**.
+
+  Earlier version of this Quick Action opened the PDFO PWA as an installed
+  Chrome app (`open -a "PDFO"`, relying on `manifest.webmanifest`'s
+  `file_handlers` + `launchQueue.setConsumer` in `index.html`) — that flow
+  still works if you want to see the results UI, just via a manual PWA
+  install + drag-drop rather than the Quick Action, which is now headless by
+  design.
 
 ## Known limitations (v1)
 
