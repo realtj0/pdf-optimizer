@@ -163,12 +163,35 @@ two. Pieces:
   `node` wouldn't resolve.
 
   The `.workflow` bundle was authored directly (`Contents/Info.plist` +
-  `Contents/document.wflow`) rather than built via Automator's UI — Finder's
-  Services cache needs a flush + restart to pick up changes:
-  `/System/Library/CoreServices/pbs -flush && killall Finder`. If the menu
-  item is missing (or its label is stale — a rename didn't immediately take
-  in testing), that's the first thing to retry, or check
-  **System Settings → General → Login Items & Extensions → Extensions**.
+  `Contents/document.wflow`) rather than built via Automator's UI, and it
+  took three rounds of fixes before macOS actually ran it — worth recording
+  since none of these are discoverable from Apple's documentation, only by
+  diffing against `~/Library/Services/Swap ecrans.workflow`, a real
+  Automator-saved workflow already on this Mac:
+  1. **New/renamed services don't show up from a plain
+     `pbs -flush`** — Finder's Services Menu cache
+     (`~/Library/Preferences/com.apple.ServicesMenu.Services.plist`, read via
+     `defaults read com.apple.ServicesMenu.Services`) only gets rebuilt by
+     actually killing the `pbs` process so it respawns and rescans:
+     `killall pbs && /System/Library/CoreServices/pbs -flush && killall Finder`.
+  2. **`CFBundleVersion` in the action dict must match the actually-installed
+     action bundle**, not just be "a version string" — check
+     `/System/Library/Automator/Run Shell Script.action/Contents/Info.plist`'s
+     own `CFBundleVersion` (`2.0.3` on this machine) and mirror it exactly, or
+     Automator refuses to run the workflow ("cannot be run because it is not
+     configured correctly").
+  3. **`workflowMetaData` needs a fuller set of keys than the minimal example**
+     that's commonly shared online — `applicationBundleIDsByPath`,
+     `applicationPaths`, `presentationMode`, `systemImageName`,
+     `useAutomaticInputType` all need to be present (even at empty/default
+     values), and `processesInput`/`serviceProcessesInput` need to be actual
+     booleans (`true`, since the shell script does consume the selected
+     files), not integers.
+
+  If it ever needs debugging again: right-click → Services → Optimize PDF
+  gives an immediate, specific error dialog ("cannot be run because it is
+  not configured correctly", with a "Show Workflow" button) rather than
+  silently failing — that's the fastest signal something's still off.
 
   Earlier version of this Quick Action opened the PDFO PWA as an installed
   Chrome app (`open -a "PDFO"`, relying on `manifest.webmanifest`'s
