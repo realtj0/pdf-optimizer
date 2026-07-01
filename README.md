@@ -185,13 +185,29 @@ two. Pieces:
      `applicationPaths`, `presentationMode`, `systemImageName`,
      `useAutomaticInputType` all need to be present (even at empty/default
      values), and `processesInput`/`serviceProcessesInput` need to be actual
-     booleans (`true`, since the shell script does consume the selected
-     files), not integers.
+     booleans, not integers.
+  4. Even after all of the above, a hand-placed file in `~/Library/Services`
+     still doesn't show up as a *registered* Quick Action (e.g. toggleable in
+     System Settings → Extensions) until it's opened in **Automator.app and
+     re-saved (⌘S) once**, with no edits needed — Automator's own save routine
+     does the actual OS-level extension registration, which nothing else
+     (including `pbs -flush`) triggers. After that it shows correctly under
+     Finder's **Quick Actions ▸** submenu.
 
   If it ever needs debugging again: right-click → Services → Optimize PDF
   gives an immediate, specific error dialog ("cannot be run because it is
   not configured correctly", with a "Show Workflow" button) rather than
   silently failing — that's the fastest signal something's still off.
+
+  **On menu placement**: it lives under "Quick Actions ▸", not inline in the
+  main context menu — that's the ceiling for an Automator-based Quick Action,
+  not a bug. Inline/top-level placement (`FinderActive`/`FinderOrdering` in
+  `pbs`'s prefs) is reserved for Apple's built-in Finder extensions and
+  Shortcuts.app quick actions only; apps like Skim/CotEditor that do show
+  inline are registering native `NSServices` from compiled app code, a
+  different and much heavier mechanism (a real Xcode project) not reachable
+  via Automator or Shortcuts. Decided it's not worth chasing for one fewer
+  click — see ROADMAP.md.
 
   Earlier version of this Quick Action opened the PDFO PWA as an installed
   Chrome app (`open -a "PDFO"`, relying on `manifest.webmanifest`'s
